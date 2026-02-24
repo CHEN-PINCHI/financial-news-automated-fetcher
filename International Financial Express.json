@@ -1,0 +1,275 @@
+{
+  "name": "國際金融快報",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n// 強制加 8 小時變成台北時間\nconst taipeiTime = new Date(new Date().getTime() + 8 * 60 * 60 * 1000);\nconst today = taipeiTime.toISOString().split('T')[0];\n\nlet report = `📊 ${today} 全球金融深度彙整\\n(分為美股、國際、台股三區，各取重點)\\n\\n`;\n\n// --- 1. 去重 (Deduplication) ---\nconst uniqueItems = [];\nconst seenLinks = new Set();\nitems.forEach(item => {\n  if (!seenLinks.has(item.json.link)) {\n    seenLinks.add(item.json.link);\n    uniqueItems.push(item);\n  }\n});\n\n// --- 2. 分類 (Categorization) ---\n// 準備三個桶子來裝不同新聞\nconst usNews = [];\nconst intlNews = [];\nconst twNews = [];\n\nuniqueItems.forEach(item => {\n  const link = item.json.link || \"\";\n  const title = item.json.title || \"\";\n  \n  // 依照網址特徵丟進桶子\n  if (link.includes(\"google.com\")) {\n    usNews.push(item); // Google News 美股\n  } else if (link.includes(\"cnbc.com\")) {\n    intlNews.push(item); // CNBC\n  } else if (link.includes(\"tw.stock.yahoo\")) {\n    // Yahoo 比較特別，要判斷一下是國際還是台股\n    // 通常網址看不出來，我們簡單分：如果標題有美股/國際字眼就算國際，不然算台股\n    // 或是為了簡單，我們可以把 Yahoo 國際版跟台股版都視為廣義台股/中文來源，\n    // 但如果你有明確分開 RSS，這裡可以做得更細。\n    // 這裡我做一個簡單的邏輯：如果來源是 Yahoo 且標題含 \"美股\" 或 \"歐股\"，歸類國際\n    if (title.includes(\"美股\") || title.includes(\"歐股\") || title.includes(\"亞股\")) {\n        intlNews.push(item);\n    } else {\n        twNews.push(item);\n    }\n  } else {\n    // 其他沒辨識出的，預設丟國際\n    intlNews.push(item);\n  }\n});\n\n// --- 3. 組合報告 (Generation) ---\n// 定義一個產生區塊文字的函數\nfunction appendSection(title, newsList, limit) {\n  let sectionText = `## ${title}\\n`;\n  if (newsList.length === 0) {\n    sectionText += \"(今日無相關重點新聞)\\n\\n\";\n    return sectionText;\n  }\n  \n  // 只取前 N 則\n  const topList = newsList.slice(0, limit);\n  \n  topList.forEach((item, index) => {\n    const n = item.json;\n    sectionText += `### ${index + 1}. ${n.title}\\n`;\n    sectionText += `- 🔗 ${n.link}\\n`;\n    sectionText += `- 📅 ${n.pubDate}\\n\\n`;\n  });\n  sectionText += \"---\\n\\n\"; // 區塊分隔線\n  return sectionText;\n}\n\n// 依序寫入報告 (每個區塊最多取 15 則，避免太長)\nreport += appendSection(\"🇺🇸 美股焦點 (Google News)\", usNews, 15);\nreport += appendSection(\"🌍 國際/CNBC 趨勢\", intlNews, 15);\nreport += appendSection(\"🇹🇼 台股市場 (Yahoo)\", twNews, 15);\n\nreturn [{\n  json: {\n    final_report: report,\n    report_title: `${today}_全球金融重點快報`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        0
+      ],
+      "id": "1b889a46-1f9e-4ae5-9a2e-e8f11b2268e3",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        208,
+        0
+      ],
+      "id": "94ae61bd-acaf-4b6e-ac07-f10c231ba907",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "folderId": "YOUR KEY HERE",
+        "title": "={{ $json.report_title }}"
+      },
+      "id": "ee04f2a0-d0d4-4257-959f-895771ca6f23",
+      "name": "Create",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        992,
+        0
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "mOS0JJfIpP65yZWr",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ $json.id }}",
+        "actionsUi": {
+          "actionFields": [
+            {
+              "action": "insert",
+              "text": "={{ $('Code in JavaScript').item.json.final_report }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        0
+      ],
+      "id": "6d269aec-a979-40f8-b848-730f669c8319",
+      "name": "Update",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "mOS0JJfIpP65yZWr",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        608,
+        -32
+      ],
+      "id": "1c3dcfc6-4cc9-4404-b73a-c820aeb0f10e",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "url": "https://tw.stock.yahoo.com/rss?category=tw-market",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        -224
+      ],
+      "id": "2de7ddaa-736c-458a-bb7f-ea0e9a91a57c",
+      "name": "Yahoo 台股"
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss/search?q=%E7%BE%8E%E8%82%A1+when:1d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        -80
+      ],
+      "id": "83f2e0bc-40c1-4035-9d67-3e64969258b7",
+      "name": "Google 美股"
+    },
+    {
+      "parameters": {
+        "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        64
+      ],
+      "id": "bee49e68-c379-407b-bd95-6b004d486288",
+      "name": "CNBC 國際"
+    },
+    {
+      "parameters": {
+        "url": "https://tw.stock.yahoo.com/rss?category=intl-markets",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        400,
+        208
+      ],
+      "id": "77be44d2-9c64-474d-a0af-d756ca7ab07a",
+      "name": "Yahoo 國際"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Create",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Google 美股",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Yahoo 台股",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CNBC 國際",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Yahoo 國際",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create": {
+      "main": [
+        [
+          {
+            "node": "Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Yahoo 台股": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google 美股": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "CNBC 國際": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Yahoo 國際": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Taipei",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "cec16789-dc53-4ef5-b565-76d5f6291850",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "922f6047c5ee9e7bf91f54c6c2e654e68efea2aed8775c52d15b82a68e91de05"
+  },
+  "id": "wJBDyptmfvb2jll6BSn7o",
+  "tags": []
+}
